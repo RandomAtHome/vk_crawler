@@ -4,7 +4,7 @@ import getpass
 import config
 
 
-def try_login():
+def get_vk_session():
     """
     Request login and password and try to login
     :return: None if authentication failed, VkApi object otherwise
@@ -20,21 +20,33 @@ def try_login():
     return vk_session
 
 
+def get_small_groups_iter(vk_session):
+    """
+    Take current session, get iterator over all groups and then filter them
+    This is more memory efficient (even though all groups from request are stored in tools's memory)
+    :param vk_session: current session
+    :return: iterator over groups with not more than 100 members
+    """
+    tools = vk_api.tools.VkTools(vk_session)
+    return filter(lambda x: x["members_count"] <= config.MEMBER_LIMIT, tools.get_all_iter(method="groups.get", values={
+        "extended": 1,
+        "fields": "members_count"
+    }, max_count=1000))
+
+
 def main():
     vk_session = None
     attempts = 0
     while vk_session is None and attempts < config.LOGIN_ATTEMPTS_LIMITS:
         attempts += 1
-        vk_session = try_login()
+        vk_session = get_vk_session()
     if vk_session is None:
         print("Failed to login!")
         return
 
-    vk = vk_session.get_api()
-    response = vk.wall.get(count=1)
-
-    if response['items']:
-        print(response['items'][0])
+    print("Names of groups:")
+    for group in get_small_groups_iter(vk_session):
+        print(group["name"])
 
 
 if __name__ == '__main__':
