@@ -1,7 +1,10 @@
 # -*- coding: utf-8 -*-
-import vk_api
 import getpass
+
+import vk_api
+
 import config
+import db_functions
 
 
 def get_vk_session():
@@ -27,6 +30,7 @@ def get_small_groups_iter(vk_session):
     :param vk_session: current session
     :return: iterator over groups with not more than 100 members
     """
+
     def match(group):
         return group["members_count"] <= config.MEMBER_LIMIT
 
@@ -44,6 +48,7 @@ def get_matching_users_iter(vk_session, group):
     :param group: vk object that describes group's parameters
     :return: iterator over matched users in given group
     """
+
     def match(user):
         if any(key not in user for key in ("sex", "bdate")):
             return False
@@ -65,6 +70,25 @@ def get_matching_users_iter(vk_session, group):
     }, max_count=1000))
 
 
+def work_with_db(vk_session, cursor, groups):
+    """
+    Add matching users from every group in groups to DB that cursor points to
+    :param vk_session: vk session
+    :param cursor: cursor to SQLite DB
+    :param groups: list of vk group objects
+    """
+
+    def transform(user):
+        return {'vk_id': user["id"],
+                'first_name': user["first_name"],
+                'last_name': user["last_name"]}
+
+    for group in groups:
+        if config.VERBOSE:
+            print("Now parsing:", group["name"])
+        db_functions.update_db(cursor, map(transform, get_matching_users_iter(vk_session, group)))
+
+
 def main():
     vk_session = None
     attempts = 0
@@ -76,16 +100,18 @@ def main():
         return
 
     groups = list(get_small_groups_iter(vk_session))  # to avoid further requests to server
-    print("Names of groups:")
+    print("List of groups:")
     for group in groups:
         print(group["name"])
     print()
-    print("Names of ladies:")
-    for group in groups:
-        print(group["name"])
-        for user in get_matching_users_iter(vk_session, group):
-            print(user["last_name"], user["first_name"])
-        print("=====")
+
+    conn = db_functions.connect_to_db()
+    work_with_db(vk_session, conn.cursor(), groups)
+    print("Current list of users")
+    for row in conn.execute("SELECT * FROM Users"):
+        print(*row)  # test results
+    conn.commit()
+    conn.close()
 
 
 if __name__ == '__main__':
